@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "interpreter",
+    "macros",
+]

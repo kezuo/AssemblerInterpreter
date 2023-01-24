@@ -15,10 +15,10 @@ fn generate_parse_fn(enum_ident: &Ident, variant: syn::Variant) -> (Ident, Token
     let mut get_fields = Vec::new();
     let add_consume_comma = |token_streams: &mut Vec<TokenStream2>| {
         token_streams.push(quote! {
-            if let Some((_, Token::Comma())) = iter.next() {
-            } else {
-                return (Some(tokens), None);
-            };
+            match iter.next() {
+                Some((_, Token::Comma())) => (),
+                _ => return (Some(tokens), None),
+            }
         })
     };
 
@@ -43,10 +43,9 @@ fn generate_parse_fn(enum_ident: &Ident, variant: syn::Variant) -> (Ident, Token
             if segments.len() == 1 && segments[0].ident == "i64" {
                 let name = Ident::new(&format!("n{}", n_count), Span::call_site());
                 get_fields.push(quote! {
-                    let mut #name = if let Some((_, Token::Number(n))) = iter.next() {
-                        *n
-                    } else {
-                        return (Some(tokens), None);
+                    let #name = match iter.next() {
+                        Some((_, Token::Number(n))) => *n,
+                        _ => return (Some(tokens), None),
                     };
                 });
                 var_idents.push(name);
@@ -55,10 +54,9 @@ fn generate_parse_fn(enum_ident: &Ident, variant: syn::Variant) -> (Ident, Token
             if segments.len() == 1 && segments[0].ident == "Ident" {
                 let name = Ident::new(&format!("i{}", i_count), Span::call_site());
                 get_fields.push(quote! {
-                    let mut #name = if let Some((_, Token::Identity(s))) = iter.next() {
-                        Ident(*s)
-                    } else {
-                        return (Some(tokens), None);
+                    let #name = match iter.next() {
+                        Some((_, Token::Identity(s))) => Ident(*s),
+                        _ => return (Some(tokens), None),
                     };
                 });
                 var_idents.push(name);
@@ -83,10 +81,9 @@ fn generate_parse_fn(enum_ident: &Ident, variant: syn::Variant) -> (Ident, Token
                 if segments.len() == 1 && segments[0].ident == "str" {
                     let name = Ident::new(&format!("s{}", s_count), Span::call_site());
                     get_fields.push(quote! {
-                        let mut #name = if let Some((_, Token::String(s))) = iter.next() {
-                            *s
-                        } else {
-                            return (Some(tokens), None);
+                        let #name = match iter.next() {
+                            Some((_, Token::String(s))) => *s,
+                            _ => return (Some(tokens), None),
                         };
                     });
                     var_idents.push(name);

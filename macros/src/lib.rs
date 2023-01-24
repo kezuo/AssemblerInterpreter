@@ -43,7 +43,7 @@ fn generate_parse_fn(enum_ident: &Ident, variant: syn::Variant) -> (Ident, Token
             if segments.len() == 1 && segments[0].ident == "i64" {
                 let name = Ident::new(&format!("n{}", n_count), Span::call_site());
                 get_fields.push(quote! {
-                    let mut #name = if let Some((index, Token::Number(n))) = iter.next() {
+                    let mut #name = if let Some((_, Token::Number(n))) = iter.next() {
                         *n
                     } else {
                         return (Some(tokens), None);
@@ -55,7 +55,7 @@ fn generate_parse_fn(enum_ident: &Ident, variant: syn::Variant) -> (Ident, Token
             if segments.len() == 1 && segments[0].ident == "Ident" {
                 let name = Ident::new(&format!("i{}", i_count), Span::call_site());
                 get_fields.push(quote! {
-                    let mut #name = if let Some((index, Token::Identity(s))) = iter.next() {
+                    let mut #name = if let Some((_, Token::Identity(s))) = iter.next() {
                         Ident(*s)
                     } else {
                         return (Some(tokens), None);
@@ -83,7 +83,7 @@ fn generate_parse_fn(enum_ident: &Ident, variant: syn::Variant) -> (Ident, Token
                 if segments.len() == 1 && segments[0].ident == "str" {
                     let name = Ident::new(&format!("s{}", s_count), Span::call_site());
                     get_fields.push(quote! {
-                        let mut #name = if let Some((index, Token::String(s))) = iter.next() {
+                        let mut #name = if let Some((_, Token::String(s))) = iter.next() {
                             *s
                         } else {
                             return (Some(tokens), None);

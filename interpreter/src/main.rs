@@ -101,18 +101,23 @@ enum MsgArg<'s> {
 }
 
 #[derive(Debug)]
+struct Msg<'s>(Vec<MsgArg<'s>>);
+
+#[derive(Debug)]
+struct Label<'s>(&'s str);
+
+#[derive(Debug)]
 enum Node<'s> {
     Cmd(Cmd<'s>),
-    Msg(Vec<MsgArg<'s>>),
-    Tag(&'s str),
+    Msg(Msg<'s>),
+    Label(Label<'s>),
 }
 
 #[derive(Debug)]
-struct Ident<'s> (&'s str);
+struct Ident<'s>(&'s str);
 
 #[allow(non_camel_case_types)]
-#[derive(macros::Parse)]
-#[derive(Debug)]
+#[derive(macros::Parse, Debug)]
 enum Cmd<'s> {
     mov(Ident<'s>, Ident<'s>),
     movi(Ident<'s>, i64),
@@ -141,22 +146,100 @@ enum Cmd<'s> {
 }
 
 impl<'s> Node<'s> {
-    fn parse<'t> (tokens: &'t [Token<'s>]) -> (Option<&'t [Token<'s>]>, Vec<Self>) {
-        let (left, cmds) = try_parse_cmd(tokens);
-        (left, cmds.into_iter().map(|c| Node::Cmd(c)).collect())
+    fn try_parse_msg<'t>(tokens: &'t [Token<'s>]) -> (Option<&'t [Token<'s>]>, Option<Msg<'s>>) {
+        let mut iter = tokens.iter().enumerate();
+        if let Some((_, Token::Identity(s))) = iter.next() {
+            if !"msg".starts_with(s) {
+                return (Some(tokens), None);
+            }
+        } else {
+            return (Some(tokens), None);
+        };
+        let mut args = Vec::<MsgArg>::new();
+        match iter.next() {
+            Some((_, Token::Identity(i))) => args.push(MsgArg::Ident(Ident(*i))),
+            Some((_, Token::String(s))) => args.push(MsgArg::String(*s)),
+            _ => (),
+        }
+        loop {
+            match iter.next() {
+                Some((_, Token::Comma())) => (),
+                Some((index, _)) => return (tokens.get(index..), Some(Msg(args))),
+                None => return (None, Some(Msg(args))),
+            }
+            match iter.next() {
+                Some((_, Token::Identity(i))) => args.push(MsgArg::Ident(Ident(*i))),
+                Some((_, Token::String(s))) => args.push(MsgArg::String(*s)),
+                Some((index, _)) => return (tokens.get(index..), Some(Msg(args))),
+                _ => panic!(),
+            };
+        }
+    }
+
+    fn try_parse_label<'t>(tokens: &'t [Token<'s>]) -> (Option<&'t [Token<'s>]>, Option<Label<'s>>) {
+        let mut iter = tokens.iter().enumerate();
+        let name = match iter.next() {
+                Some((_, Token::Identity(i))) => *i,
+                _ => return (Some(tokens), None),
+        };
+        match iter.next() {
+            Some((_, Token::Colon())) => (),
+            _ => return (Some(tokens), None),
+        }
+        match iter.next() {
+            Some((index, _)) => return (tokens.get(index..), Some(Label(name))),
+            None => return (None, Some(Label(name))),
+        }
+    }
+
+    fn parse<'t>(mut tokens: &'t [Token<'s>]) -> (Option<&'t [Token<'s>]>, Vec<Self>) {
+        let mut ret = Vec::<_>::new();
+        loop {
+            let mut matched = false;
+            let (left, cmds) = try_parse_cmd(tokens);
+            if cmds.len() > 0 {
+                matched = true;
+                ret.append(&mut cmds.into_iter().map(|c| Node::Cmd(c)).collect::<Vec<_>>());
+            }
+            if left.is_none() {
+                return (None, ret);
+            } else {
+                tokens = left.unwrap();
+            }
+            let (left, msg) = Self::try_parse_msg(tokens);
+            if let Some(msg) = msg {
+                matched = true;
+                ret.push(Node::Msg(msg));
+            }
+            if left.is_none() {
+                return (None, ret);
+            } else {
+                tokens = left.unwrap();
+            }
+            let (left, label) = Self::try_parse_label(tokens);
+            if let Some(label) = label {
+                matched = true;
+                ret.push(Node::Label(label));
+            }
+            if left.is_none() {
+                return (None, ret);
+            } else {
+                tokens = left.unwrap();
+            }
+            if !matched {
+                return (Some(tokens), ret);
+            }
+        }
     }
 }
 
 pub struct AssemblerInterpreter {}
 
 impl AssemblerInterpreter {
-
     pub fn split(input: &str) -> Vec<&str> {
         let lines = input
             .split('\n')
-            .filter_map(|s| {
-                s.get(0..(s.chars().position(|c| c == ';')).unwrap_or(s.len()))
-            })
+            .filter_map(|s| s.get(0..(s.chars().position(|c| c == ';')).unwrap_or(s.len())))
             .collect::<Vec<&str>>();
         lines
     }
@@ -164,6 +247,7 @@ impl AssemblerInterpreter {
     pub fn interpret(input: &str) -> Option<String> {
         let lines = Self::split(input);
         let mut nodes = Vec::<Node>::new();
+        dbg!(&lines);
         for line in lines {
             let tokens = Token::tokenize(line);
             if let (None, mut nodes_now) = Node::parse(&tokens) {
@@ -179,7 +263,7 @@ impl AssemblerInterpreter {
 
 #[test]
 fn test() {
-        let input = "\nmov   a, 2            ; value1\nmov   b, 10           ; value2\nmov   c, a            ; temp1\nmov   d, b            ; temp2\ncall  proc_func\ncall  print\nend\n\nproc_func:\n    cmp   d, 1\n    je    continue\n    mul   c, a\n    dec   d\n    call  proc_func\n\ncontinue:\n    ret\n\nprint:\n    msg a, '^', b, ' = ', c\n    ret\n";
+    let input = "\nmov   a, 2            ; value1\nmov   b, 10           ; value2\nmov   c, a            ; temp1\nmov   d, b            ; temp2\ncall  proc_func\ncall  print\nend\n\nproc_func:\n    cmp   d, 1\n    je    continue\n    mul   c, a\n    dec   d\n    call  proc_func\n\ncontinue:\n    ret\n\nprint:\n    msg a, '^', b, ' = ', c\n    ret\n";
     AssemblerInterpreter::interpret(input);
 }
 
@@ -226,5 +310,4 @@ pub mod tests {
     }
 }
 
-fn main() {
-}
+fn main() {}

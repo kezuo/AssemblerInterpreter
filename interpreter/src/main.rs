@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{ VecDeque, HashMap };
 
 struct LimitedQueue<T, const N: usize> {
     queue: VecDeque<T>,
@@ -145,6 +145,13 @@ enum Cmd<'s> {
     end(),
 }
 
+#[derive(Debug)]
+enum CmpResult {
+    Eq(),
+    Greater(),
+    Less(),
+}
+
 impl<'s> Node<'s> {
     fn try_parse_msg<'t>(tokens: &'t [Token<'s>]) -> (Option<&'t [Token<'s>]>, Option<Msg<'s>>) {
         let mut iter = tokens.iter().enumerate();
@@ -231,6 +238,153 @@ impl<'s> Node<'s> {
             }
         }
     }
+
+    fn execute(nodes: Vec<Self>) -> Option<String> {
+        let mut jmp_map = HashMap::<&str, _>::new();
+        let mut iter = nodes.iter();
+        while let Some(node) = iter.next() {
+            match node {
+                Node::Label(Label(s)) => {
+                    match jmp_map.get(*s) {
+                        Some(_) => panic!(),
+                        None => { jmp_map.insert(*s, iter.clone()); },
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        let mut ret = String::new();
+        let mut cmp_result = Option::<CmpResult>::None;
+        let cmp = |x: i64, y: i64| -> CmpResult {
+            if x == y {
+                CmpResult::Eq()
+            } else if x > y {
+                CmpResult::Greater()
+            } else {
+                CmpResult::Less()
+            }
+        };
+        let mut stack = Vec::<_>::new();
+        let mut registers = HashMap::<&str, i64>::new();
+        let mut iter = nodes.iter();
+        while let Some(node) = iter.next() {
+            println!("executing {:?}", node);
+            match node {
+                Node::Cmd(cmd) => {
+                    match cmd {
+                        Cmd::mov(Ident(d), Ident(s)) => {
+                            registers.insert(*d, registers[*s]);
+                        }
+                        Cmd::movi(Ident(d), n) => {
+                            registers.insert(*d, *n);
+                        }
+                        Cmd::inc(Ident(d)) => {
+                            registers.insert(*d, registers[*d] + 1);
+                        }
+                        Cmd::dec(Ident(d)) => {
+                            registers.insert(*d, registers[*d] - 1);
+                        }
+                        Cmd::add(Ident(d), Ident(s)) => {
+                            registers.insert(*d, registers[*d] + registers[*s]);
+                        }
+                        Cmd::addi(Ident(d), n) => {
+                            registers.insert(*d, registers[*d] + n);
+                        }
+                        Cmd::sub(Ident(d), Ident(s)) => {
+                            registers.insert(*d, registers[*d] - registers[*s]);
+                        }
+                        Cmd::subi(Ident(d), n) => {
+                            registers.insert(*d, registers[*d] - n);
+                        }
+                        Cmd::mul(Ident(d), Ident(s)) => {
+                            registers.insert(*d, registers[*d] * registers[*s]);
+                        }
+                        Cmd::div(Ident(d), Ident(s)) => {
+                            registers.insert(*d, registers[*d] / registers[*s]);
+                        }
+                        Cmd::jmp(Ident(s)) => {
+                            iter = jmp_map[*s].clone();
+                        }
+                        Cmd::cmp(Ident(x), Ident(y)) => {
+                            cmp_result = Some(cmp(registers[*x], registers[*y]));
+                        }
+                        Cmd::cmpi(Ident(x), y) => {
+                            cmp_result = Some(cmp(registers[*x], *y));
+                        }
+                        Cmd::cmpii(x, y) => {
+                            cmp_result = Some(cmp(*x, *y));
+                        }
+                        Cmd::cmpi_(x, Ident(y)) => {
+                            cmp_result = Some(cmp(*x, registers[*y]));
+                        }
+                        Cmd::jne(Ident(s)) => {
+                            match cmp_result {
+                                None => panic!(),
+                                Some(CmpResult::Greater()) | Some(CmpResult::Less()) => iter = jmp_map[*s].clone(),
+                                _ => (),
+                            }
+                        }
+                        Cmd::je(Ident(s)) => {
+                            match cmp_result {
+                                None => panic!(),
+                                Some(CmpResult::Eq()) => iter = jmp_map[*s].clone(),
+                                _ => (),
+                            }
+                        },
+                        Cmd::jge(Ident(s)) => {
+                            match cmp_result {
+                                None => panic!(),
+                                Some(CmpResult::Greater() | CmpResult::Eq()) => iter = jmp_map[*s].clone(),
+                                _ => (),
+                            }
+                        }
+                        Cmd::jg(Ident(s)) => {
+                            match cmp_result {
+                                None => panic!(),
+                                Some(CmpResult::Greater()) => iter = jmp_map[*s].clone(),
+                                _ => (),
+                            }
+                        }
+                        Cmd::jle(Ident(s)) => {
+                            match cmp_result {
+                                None => panic!(),
+                                Some(CmpResult::Less() | CmpResult::Eq()) => iter = jmp_map[*s].clone(),
+                                _ => (),
+                            }
+                        }
+                        Cmd::jl(Ident(s)) => {
+                            match cmp_result {
+                                None => panic!(),
+                                Some(CmpResult::Less()) => iter = jmp_map[*s].clone(),
+                                _ => (),
+                            }
+                        },
+                        Cmd::call(Ident(s)) => {
+                            stack.push(iter.clone());
+                            iter = jmp_map[*s].clone();
+                        },
+                        Cmd::ret() => {
+                            iter = stack.pop().unwrap();
+                        },
+                        Cmd::end() => {
+                            return Some(ret);
+                        },
+                    }
+                }
+                Node::Msg(msg) => {
+                    for arg in msg.0.iter() {
+                        match arg {
+                            MsgArg::String(s) => ret.push_str(*s),
+                            MsgArg::Ident(Ident(i)) => ret.push_str(&registers.get(*i).unwrap().to_string()),
+                        }
+                    }
+                },
+                Node::Label(_) => (),
+            }
+        }
+        None
+    }
 }
 
 pub struct AssemblerInterpreter {}
@@ -251,20 +405,20 @@ impl AssemblerInterpreter {
         for line in lines {
             let tokens = Token::tokenize(line);
             if let (None, mut nodes_now) = Node::parse(&tokens) {
-                dbg!(&nodes_now);
+                println!("{:?}", nodes_now);
                 nodes.append(&mut nodes_now);
             } else {
-                dbg!(&tokens);
+                println!("{:?}", tokens);
             }
         }
-        None
+        Node::execute(nodes)
     }
 }
 
 #[test]
 fn test() {
     let input = "\nmov   a, 2            ; value1\nmov   b, 10           ; value2\nmov   c, a            ; temp1\nmov   d, b            ; temp2\ncall  proc_func\ncall  print\nend\n\nproc_func:\n    cmp   d, 1\n    je    continue\n    mul   c, a\n    dec   d\n    call  proc_func\n\ncontinue:\n    ret\n\nprint:\n    msg a, '^', b, ' = ', c\n    ret\n";
-    AssemblerInterpreter::interpret(input);
+    println!("{:?}", AssemblerInterpreter::interpret(input));
 }
 
 #[cfg(test)]
@@ -310,4 +464,7 @@ pub mod tests {
     }
 }
 
-fn main() {}
+fn main() {
+    let input = "\nmov   a, 2            ; value1\nmov   b, 10           ; value2\nmov   c, a            ; temp1\nmov   d, b            ; temp2\ncall  proc_func\ncall  print\nend\n\nproc_func:\n    cmp   d, 1\n    je    continue\n    mul   c, a\n    dec   d\n    call  proc_func\n\ncontinue:\n    ret\n\nprint:\n    msg a, '^', b, ' = ', c\n    ret\n";
+    println!("{:?}", AssemblerInterpreter::interpret(input));
+}

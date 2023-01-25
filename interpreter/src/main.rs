@@ -128,7 +128,9 @@ enum Cmd<'s> {
     sub(Ident<'s>, Ident<'s>),
     subi(Ident<'s>, i64),
     mul(Ident<'s>, Ident<'s>),
+    muli(Ident<'s>, i64),
     div(Ident<'s>, Ident<'s>),
+    divi(Ident<'s>, i64),
     jmp(Ident<'s>),
     cmp(Ident<'s>, Ident<'s>),
     cmpi(Ident<'s>, i64),
@@ -136,10 +138,10 @@ enum Cmd<'s> {
     cmpi_(i64, Ident<'s>),
     jne(Ident<'s>),
     je(Ident<'s>),
-    jge(Ident<'s>),
     jg(Ident<'s>),
-    jle(Ident<'s>),
+    jge(Ident<'s>),
     jl(Ident<'s>),
+    jle(Ident<'s>),
     call(Ident<'s>),
     ret(),
     end(),
@@ -300,8 +302,14 @@ impl<'s> Node<'s> {
                         Cmd::mul(Ident(d), Ident(s)) => {
                             registers.insert(*d, registers[*d] * registers[*s]);
                         }
+                        Cmd::muli(Ident(d), n) => {
+                            registers.insert(*d, registers[*d] * n);
+                        }
                         Cmd::div(Ident(d), Ident(s)) => {
                             registers.insert(*d, registers[*d] / registers[*s]);
+                        }
+                        Cmd::divi(Ident(d), n) => {
+                            registers.insert(*d, registers[*d] / n);
                         }
                         Cmd::jmp(Ident(s)) => {
                             iter = jmp_map[*s].clone();
